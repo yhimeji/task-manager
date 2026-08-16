@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理画面</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-4">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>管理画面</h2>
+            <div>
+                <span class="me-3">ログイン中：{{ current_user.display_name }}</span>
+                <a href="{{ url_for('index') }}" class="btn btn-secondary">タスク一覧へ戻る</a>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary ms-2">ログアウト</a>
+            </div>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="card shadow mb-4">
+            <div class="card-header">{% if editing_task %}タスク編集{% else %}タスク登録{% endif %}</div>
+            <div class="card-body">
+                <form method="post" action="{{ url_for('admin') }}">
+                    {% if editing_task %}
+                        <input type="hidden" name="task_id" value="{{ editing_task.id }}">
+                    {% endif %}
+                    <div class="row g-3">
+                        <div class="col-md-5">
+                            <label class="form-label">タスク名</label>
+                            <input type="text" name="task_name" class="form-control" value="{{ editing_task.task_name if editing_task else '' }}" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">期限</label>
+                            <input type="date" name="due_date" class="form-control" value="{{ editing_task.due_date if editing_task else '' }}" required>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">優先度</label>
+                            <select name="priority" class="form-select">
+                                <option value="high" {% if editing_task and editing_task.priority == 'high' %}selected{% endif %}>高</option>
+                                <option value="medium" {% if not editing_task or editing_task.priority == 'medium' %}selected{% endif %}>中</option>
+                                <option value="low" {% if editing_task and editing_task.priority == 'low' %}selected{% endif %}>低</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">担当者</label>
+                            <select name="assignee_id" class="form-select">
+                                <option value="">未設定</option>
+                                {% for user in users %}
+                                    <option value="{{ user.id }}" {% if editing_task and editing_task.assignee_id == user.id %}selected{% endif %}>{{ user.display_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">説明</label>
+                            <textarea name="description" class="form-control" rows="3">{{ editing_task.description if editing_task else '' }}</textarea>
+                        </div>
+                        <div class="col-12">
+                            <button type="submit" class="btn btn-primary">{% if editing_task %}更新{% else %}登録{% endif %}</button>
+                            {% if editing_task %}
+                                <a href="{{ url_for('admin') }}" class="btn btn-secondary ms-2">キャンセル</a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card shadow mb-4">
+            <div class="card-header">ユーザー管理</div>
+            <div class="card-body">
+                <a href="{{ url_for('admin_users') }}" class="btn btn-info">ユーザー一覧・追加</a>
+            </div>
+        </div>
+
+        <div class="card shadow">
+            <div class="card-header">タスク一覧</div>
+            <div class="card-body">
+                <table class="table table-bordered align-middle">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>タスク名</th>
+                            <th>期限</th>
+                            <th>優先度</th>
+                            <th>担当者</th>
+                            <th>編集</th>
+                            <th>削除</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for task in tasks %}
+                            <tr>
+                                <td>{{ task.id }}</td>
+                                <td>{{ task.task_name }}</td>
+                                <td>{{ task.due_date }}</td>
+                                <td>
+                                    {% if task.priority == 'high' %}高{% elif task.priority == 'low' %}低{% else %}中{% endif %}
+                                </td>
+                                <td>{{ task.assignee.display_name if task.assignee else '未設定' }}</td>
+                                <td>
+                                    <a href="{{ url_for('admin', edit_id=task.id) }}" class="btn btn-warning btn-sm">編集</a>
+                                </td>
+                                <td>
+                                    <form method="post" action="{{ url_for('delete_task', task_id=task.id) }}">
+                                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('削除してよろしいですか？');">削除</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
