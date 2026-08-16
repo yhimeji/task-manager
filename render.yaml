@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: task-manager
+    runtime: python312
+    buildCommand: pip install --upgrade setuptools wheel && pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    plan: free
+    region: singapore
+    branch: main
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: FLASK_ENV
+        value: production
+      - key: SECRET_KEY
+        value: # ここに SECRET_KEY を貼り付け（Render ダッシュボードで設定）
+        sync: false  # セキュリティのため同期しない
+      - key: DATABASE_URL
+        value: # ここに PostgreSQL URL を貼り付け（Render ダッシュボードで設定）
+        sync: false  # セキュリティのため同期しない
+    databases:
+      - name: task-manager-db
+        engine: postgresql
+        plan: free
+        version: 14
+        ipAllowList: []  # 任意の IP からのアクセスを許可
+
+databases:
+  - name: task-manager-db
+    engine: postgresql
+    version: 14
+    plan: free
+    region: singapore
+
+# 設定方法:
+# 1. SECRET_KEY: https://pypi.org/project/secrets でランダム生成
+# 2. DATABASE_URL: PostgreSQL 作成後、Connections タブから取得
+# 3. render.yaml を main ブランチにプッシュ
+# 4. Render ダッシュボード → Infrastructure as Code で自動デプロイ
