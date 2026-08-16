@@ -3,6 +3,7 @@ from datetime import date, timedelta
 
 from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import LoginManager, current_user, login_required, login_user, logout_user
+from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from config import Config
@@ -179,14 +180,23 @@ def create_app() -> Flask:
             username = (request.form.get("username") or "").strip()
             password = request.form.get("password") or ""
 
-            user = User.query.filter_by(username=username).first()
-            if user and check_password_hash(user.password_hash, password):
-                login_user(user)
-                if user.role == "admin":
-                    return redirect(url_for("admin"))
-                return redirect(url_for("index"))
+            if not username:
+                flash("ユーザーIDを入力してください。", "danger")
+                return render_template("login.html")
 
-            flash("ログインIDまたはパスワードが正しくありません。", "danger")
+            user = User.query.filter_by(username=username).first()
+            if user is None:
+                flash("そのユーザーIDは存在しません。", "danger")
+                return render_template("login.html")
+
+            if not check_password_hash(user.password_hash, password):
+                flash("パスワードが正しくありません。", "danger")
+                return render_template("login.html")
+
+            login_user(user)
+            if user.role == "admin":
+                return redirect(url_for("admin"))
+            return redirect(url_for("index"))
 
         return render_template("login.html")
 
@@ -342,26 +352,30 @@ def create_app() -> Flask:
                 if not task_name or not due_date:
                     flash("タスク名と期限は必須です。", "danger")
                 else:
-                    parsed_due_date = parse_due_date(due_date)
-                    if task_id:
-                        task = Task.query.get_or_404(int(task_id))
-                        task.task_name = task_name
-                        task.description = description
-                        task.due_date = parsed_due_date
-                        task.priority = priority
-                        task.assignee_id = int(assignee_id) if assignee_id else None
-                        flash("タスクを更新しました。", "success")
-                    else:
-                        task = Task(
-                            task_name=task_name,
-                            description=description,
-                            due_date=parsed_due_date,
-                            priority=priority,
-                            assignee_id=int(assignee_id) if assignee_id else None,
-                        )
-                        db.session.add(task)
-                        flash("タスクを登録しました。", "success")
-                    db.session.commit()
+                    try:
+                        parsed_due_date = parse_due_date(due_date)
+                        if task_id:
+                            task = Task.query.get_or_404(int(task_id))
+                            task.task_name = task_name
+                            task.description = description
+                            task.due_date = parsed_due_date
+                            task.priority = priority
+                            task.assignee_id = int(assignee_id) if assignee_id else None
+                            flash("タスクを更新しました。", "success")
+                        else:
+                            task = Task(
+                                task_name=task_name,
+                                description=description,
+                                due_date=parsed_due_date,
+                                priority=priority,
+                                assignee_id=int(assignee_id) if assignee_id else None,
+                            )
+                            db.session.add(task)
+                            flash("タスクを登録しました。", "success")
+                        db.session.commit()
+                    except Exception as exc:
+                        db.session.rollback()
+                        flash("タスクの操作に失敗しました。", "danger")
 
                 return redirect(url_for("admin"))
 
@@ -398,6 +412,9 @@ def create_app() -> Flask:
                 flash("ユーザーを保存しました。", "success")
             except ValueError as exc:
                 flash(str(exc), "danger")
+            except Exception as exc:
+                db.session.rollback()
+                flash("ユーザーの保存に失敗しました。", "danger")
             return redirect(url_for("admin_users"))
 
         edit_user_id = request.args.get("edit_user_id")
@@ -416,10 +433,14 @@ def create_app() -> Flask:
             flash("自分自身は削除できません。", "danger")
             return redirect(url_for("admin_users"))
 
-        user = User.query.get_or_404(user_id)
-        db.session.delete(user)
-        db.session.commit()
-        flash("ユーザーを削除しました。", "success")
+        try:
+            user = User.query.get_or_404(user_id)
+            db.session.delete(user)
+            db.session.commit()
+            flash("ユーザーを削除しました。", "success")
+        except Exception as exc:
+            db.session.rollback()
+            flash("ユーザーの削除に失敗しました。", "danger")
         return redirect(url_for("admin_users"))
 
     @app.route("/admin/tasks/<int:task_id>/delete", methods=["POST"])
@@ -429,11 +450,36 @@ def create_app() -> Flask:
             flash("管理者権限が必要です。", "danger")
             return redirect(url_for("index"))
 
-        task = Task.query.get_or_404(task_id)
-        db.session.delete(task)
-        db.session.commit()
-        flash("タスクを削除しました。", "success")
+        try:
+            task = Task.query.get_or_404(task_id)
+            db.session.delete(task)
+            db.session.commit()
+            flash("タスクを削除しました。", "success")
+        except Exception as exc:
+            db.session.rollback()
+            flash("タスクの削除に失敗しました。", "danger")
         return redirect(url_for("admin"))
+
+    # エラーハンドラ
+    @app.errorhandler(400)
+    def bad_request(error):
+        return render_template("error.html", code=400, message="不正なリクエストです。"), 400
+
+    @app.errorhandler(404)
+    def not_found(error):
+        return render_template("error.html", code=404, message="ページが見つかりません。"), 404
+
+    @app.errorhandler(500)
+    def internal_error(error):
+        db.session.rollback()
+        return render_template("error.html", code=500, message="サーバーエラーが発生しました。管理者に連絡してください。"), 500
+
+    @app.errorhandler(Exception)
+    def handle_exception(error):
+        db.session.rollback()
+        if isinstance(error, HTTPException):
+            return error
+        return render_template("error.html", code=500, message="予期しないエラーが発生しました。"), 500
 
     return app
 
